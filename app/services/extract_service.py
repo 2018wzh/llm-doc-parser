@@ -2,7 +2,7 @@
 提取服务 - 业务逻辑层
 """
 import logging
-from typing import List
+from typing import List, Optional
 
 from app.models import ExtractRequest, ExtractedValue, SchemaField
 from app.core import ValidationException
@@ -49,7 +49,7 @@ class ExtractService:
         logger.info("步骤3: 使用LLM提取数据")
         extracted_data = await self._extract_with_llm(
             text_content,
-            request.schema,
+            request.fields,
             request.provider,
             request.model,
             custom_base_url=request.custom_base_url,
@@ -115,9 +115,9 @@ class ExtractService:
         text_content: str,
         schema: List[SchemaField],
         provider: str,
-        model: str = None,
-        custom_base_url: str = None,
-        custom_api_key: str = None,
+        model: Optional[str] = None,
+        custom_base_url: Optional[str] = None,
+        custom_api_key: Optional[str] = None,
     ) -> List[ExtractedValue]:
         """
         使用LLM提取数据

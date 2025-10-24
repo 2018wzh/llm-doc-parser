@@ -2,7 +2,7 @@
 应用配置文件
 """
 from pydantic_settings import BaseSettings
-from typing import Optional
+from typing import Optional, List
 
 
 class Settings(BaseSettings):
@@ -13,7 +13,7 @@ class Settings(BaseSettings):
     APP_VERSION: str = "1.0.0"
     DEBUG: bool = False
     
-    # LLM 提供商选择（openai|azure|claude|gemini）
+    # LLM 提供商选择（openai|azure|claude|gemini|custom）
     LLM_PROVIDER: str = "openai"
     
     # OpenAI配置
@@ -42,13 +42,13 @@ class Settings(BaseSettings):
     
     # MinIO配置
     MINIO_ENDPOINT: str = "localhost:9000"
-    MINIO_ACCESS_KEY: str
-    MINIO_SECRET_KEY: str
+    MINIO_ACCESS_KEY: Optional[str] = None
+    MINIO_SECRET_KEY: Optional[str] = None
     MINIO_SECURE: bool = False
     
     # 应用配置
     MAX_FILE_SIZE: int = 100 * 1024 * 1024  # 100MB
-    ALLOWED_FILE_TYPES: list = [
+    ALLOWED_FILE_TYPES: List[str] = [
         "pdf", "docx", "doc", "txt", "xlsx", "xls", "pptx", "ppt"
     ]
     
@@ -95,11 +95,10 @@ class Settings(BaseSettings):
 
 settings = Settings()
 
-# 验证配置
+# 验证 LLM 配置
 try:
     settings.validate_llm_provider()
 except ValueError as e:
     import logging
     logger = logging.getLogger(__name__)
     logger.warning(f"LLM配置警告: {str(e)}")
-

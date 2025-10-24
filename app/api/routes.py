@@ -24,7 +24,7 @@ extract_service = ExtractService()
         500: {"model": ErrorResponse, "description": "服务器错误"},
     },
     summary="数据提取",
-    description="从文件（MinIO或原始文本）根据指定schema提取数据",
+    description="从文件（MinIO或原始文本）根据指定字段schema提取数据",
 )
 async def extract(request: ExtractRequest) -> ExtractResponse:
     """
@@ -33,8 +33,8 @@ async def extract(request: ExtractRequest) -> ExtractResponse:
     ### 请求参数
     - **source**: 文件来源，"minio"或"raw"
     - **file**: minIO URL或者原始文本内容
-    - **schema**: 数据库中查到的schema
-    - **provider**: LLM提供商，"openai"|"azure"|"claude"|"gemini"（默认: openai）
+    - **schema** (或字段名): 数据库中查到的schema
+    - **provider**: LLM提供商，"openai"|"azure"|"claude"|"gemini"|"custom"（默认: openai）
     - **model**: LLM模型名称（若不指定则使用默认值）
     
     ### 返回

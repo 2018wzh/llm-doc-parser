@@ -19,7 +19,7 @@ class ExtractRequest(BaseModel):
     """提取请求"""
     source: Literal["minio", "raw"] = Field(..., description="文件来源")
     file: str = Field(..., description="minIO URL或者原始文本内容")
-    schema: List[SchemaField] = Field(..., description="数据库中查到的schema")
+    fields: List[SchemaField] = Field(..., alias="schema", description="数据库中查到的schema")
     provider: Literal["openai", "azure", "claude", "gemini", "custom"] = Field(
         default="openai", description="LLM提供商"
     )
