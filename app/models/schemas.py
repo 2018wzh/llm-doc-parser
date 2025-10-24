@@ -20,7 +20,13 @@ class ExtractRequest(BaseModel):
     source: Literal["minio", "raw"] = Field(..., description="文件来源")
     file: str = Field(..., description="minIO URL或者原始文本内容")
     schema: List[SchemaField] = Field(..., description="数据库中查到的schema")
-    model: str = Field(default="gpt-4-turbo-preview", description="LLM模型")
+    provider: Literal["openai", "azure", "claude", "gemini", "custom"] = Field(
+        default="openai", description="LLM提供商"
+    )
+    model: Optional[str] = Field(None, description="LLM模型名称（若不指定则使用默认值）")
+    # Custom 提供商特定参数
+    custom_base_url: Optional[str] = Field(None, description="Custom LLM的API基础URL")
+    custom_api_key: Optional[str] = Field(None, description="Custom LLM的API密钥（可选）")
 
 
 class ExtractedValue(BaseModel):

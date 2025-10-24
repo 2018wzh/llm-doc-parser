@@ -35,7 +35,7 @@ class ExtractService:
             ValidationException: 验证失败
             其他异常: 处理过程中的异常
         """
-        logger.info(f"开始数据提取: source={request.source}, model={request.model}")
+        logger.info(f"开始数据提取: source={request.source}, provider={request.provider}, model={request.model}")
         
         # 1. 获取文件内容
         logger.info("步骤1: 获取文件内容")
@@ -50,7 +50,10 @@ class ExtractService:
         extracted_data = await self._extract_with_llm(
             text_content,
             request.schema,
+            request.provider,
             request.model,
+            custom_base_url=request.custom_base_url,
+            custom_api_key=request.custom_api_key,
         )
         
         logger.info(f"数据提取完成，共提取{len(extracted_data)}个字段")
@@ -111,7 +114,10 @@ class ExtractService:
         self,
         text_content: str,
         schema: List[SchemaField],
-        model: str,
+        provider: str,
+        model: str = None,
+        custom_base_url: str = None,
+        custom_api_key: str = None,
     ) -> List[ExtractedValue]:
         """
         使用LLM提取数据
@@ -119,17 +125,31 @@ class ExtractService:
         Args:
             text_content: 文本内容
             schema: 数据schema
-            model: 模型名称
+            provider: LLM提供商 (openai|azure|claude|gemini|custom)
+            model: 模型名称（若不指定则使用默认值）
+            custom_base_url: Custom提供商的基础URL
+            custom_api_key: Custom提供商的API密钥
             
         Returns:
             提取的数据列表
         """
+        # 为 custom 提供商构建参数
+        kwargs = {}
+        if provider.lower() == "custom":
+            if not custom_base_url:
+                raise ValidationException("使用 custom 提供商时必须提供 custom_base_url")
+            kwargs["base_url"] = custom_base_url
+            if custom_api_key:
+                kwargs["api_key"] = custom_api_key
+            if model:
+                kwargs["model_name"] = model
+        
         # 使用工厂模式创建LLM实例
-        llm = LLMFactory.create("openai")
+        llm = LLMFactory.create(provider, **kwargs)
         
         # 使用LLM提取数据
         return await llm.extract(
             text_content,
             schema,
-            model,
+            model or "default",
         )
