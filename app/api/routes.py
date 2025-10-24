@@ -82,12 +82,26 @@ async def extract(
         
         # 处理文件内容
         file_content = file
+        file_extension = None
+        upload_filename = None
+        
         if upload_file:
             # 如果上传了文件，读取其内容
-            file_content = await upload_file.read()
-            if isinstance(file_content, bytes):
-                file_content = file_content.decode("utf-8")
-            logger.info(f"读取上传文件: {upload_file.filename}")
+            file_bytes = await upload_file.read()
+            upload_filename = upload_file.filename
+            
+            # 尝试解码为文本，如果失败则保留原始字节
+            try:
+                if isinstance(file_bytes, bytes):
+                    file_content = file_bytes.decode("utf-8")
+                else:
+                    file_content = file_bytes
+            except UnicodeDecodeError:
+                # 如果是二进制文件（如PDF、Word等），保留原始内容
+                # 后续交给 FileProcessingService 处理
+                file_content = file_bytes
+            
+            logger.info(f"读取上传文件: {upload_filename}")
         
         if not file_content:
             raise HTTPException(
@@ -132,6 +146,7 @@ async def extract(
             schema=schema_fields,
             provider=provider,  # type: ignore
             model=model,
+            filename=upload_filename,
         )
         
         # 调用服务执行提取

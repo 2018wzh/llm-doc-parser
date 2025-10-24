@@ -24,6 +24,7 @@ class ExtractRequest(BaseModel):
         default="openai", description="LLM提供商"
     )
     model: Optional[str] = Field(None, description="LLM模型名称（若不指定则使用默认值）")
+    filename: Optional[str] = Field(None, description="原始文件名（用于文件类型自动判断）")
 
 
 class ExtractedValue(BaseModel):

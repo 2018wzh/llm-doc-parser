@@ -44,7 +44,12 @@ class ExtractService:
         
         # 2. 提取文本
         logger.info("步骤2: 从文件提取文本")
-        text_content = await self._extract_text(request.source, request.file, file_content)
+        text_content = await self._extract_text(
+            request.source,
+            request.file,
+            file_content,
+            request.filename,
+        )
         
         # 3. 使用LLM提取数据
         logger.info("步骤3: 使用LLM提取数据")
@@ -83,6 +88,7 @@ class ExtractService:
         source: str,
         file_path: str,
         file_content: bytes,
+        filename: Optional[str] = None,
     ) -> str:
         """
         从文件提取文本
@@ -91,13 +97,17 @@ class ExtractService:
             source: 文件来源
             file_path: 文件路径或URL
             file_content: 文件内容字节
+            filename: 原始文件名（可选，用于自动判断文件类型）
             
         Returns:
             提取的文本内容
         """
         if source == "raw":
             # raw文本直接处理
-            text = file_content.decode("utf-8")
+            if isinstance(file_content, bytes):
+                text = file_content.decode("utf-8")
+            else:
+                text = str(file_content)
             return await self.file_service.extract_text_from_raw(text)
         elif source == "minio":
             # 从MinIO URL获取文件扩展名
@@ -105,6 +115,7 @@ class ExtractService:
             return await self.file_service.extract_text_from_file(
                 file_content,
                 extension,
+                filename,
             )
         else:
             raise ValidationException(f"不支持的文件来源: {source}")
