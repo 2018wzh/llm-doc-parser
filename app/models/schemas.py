@@ -2,7 +2,7 @@
 数据模型定义
 """
 from typing import List, Literal, Optional, Any
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field
 
 
 class SchemaField(BaseModel):
@@ -24,9 +24,6 @@ class ExtractRequest(BaseModel):
         default="openai", description="LLM提供商"
     )
     model: Optional[str] = Field(None, description="LLM模型名称（若不指定则使用默认值）")
-    # Custom 提供商特定参数
-    custom_base_url: Optional[str] = Field(None, description="Custom LLM的API基础URL")
-    custom_api_key: Optional[str] = Field(None, description="Custom LLM的API密钥（可选）")
 
 
 class ExtractedValue(BaseModel):

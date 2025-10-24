@@ -2,6 +2,7 @@
 提取服务 - 业务逻辑层
 """
 import logging
+import os
 from typing import List, Optional
 
 from app.models import ExtractRequest, ExtractedValue, SchemaField
@@ -52,8 +53,6 @@ class ExtractService:
             request.fields,
             request.provider,
             request.model,
-            custom_base_url=request.custom_base_url,
-            custom_api_key=request.custom_api_key,
         )
         
         logger.info(f"数据提取完成，共提取{len(extracted_data)}个字段")
@@ -116,8 +115,6 @@ class ExtractService:
         schema: List[SchemaField],
         provider: str,
         model: Optional[str] = None,
-        custom_base_url: Optional[str] = None,
-        custom_api_key: Optional[str] = None,
     ) -> List[ExtractedValue]:
         """
         使用LLM提取数据
@@ -127,8 +124,6 @@ class ExtractService:
             schema: 数据schema
             provider: LLM提供商 (openai|azure|claude|gemini|custom)
             model: 模型名称（若不指定则使用默认值）
-            custom_base_url: Custom提供商的基础URL
-            custom_api_key: Custom提供商的API密钥
             
         Returns:
             提取的数据列表
@@ -136,11 +131,16 @@ class ExtractService:
         # 为 custom 提供商构建参数
         kwargs = {}
         if provider.lower() == "custom":
-            if not custom_base_url:
-                raise ValidationException("使用 custom 提供商时必须提供 custom_base_url")
-            kwargs["base_url"] = custom_base_url
-            if custom_api_key:
-                kwargs["api_key"] = custom_api_key
+            # 从环境变量获取 custom 提供商的配置
+            base_url = os.getenv("CUSTOM_BASE_URL")
+            if not base_url:
+                raise ValidationException("使用 custom 提供商时必须设置环境变量 CUSTOM_BASE_URL")
+            kwargs["base_url"] = base_url
+            
+            api_key = os.getenv("CUSTOM_API_KEY")
+            if api_key:
+                kwargs["api_key"] = api_key
+            
             if model:
                 kwargs["model_name"] = model
         

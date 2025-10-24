@@ -6,6 +6,7 @@
 - source: 文件来源，"minio"或者"raw"
 - file: minIO URL或者原始文本内容
 - schema: 数据库中查到的schema
+- provider: 提供商名称
 - model: LLM模型
 ### 返回
 - 提取的json数据
@@ -30,3 +31,4 @@
         }
     ]
 }
+```
