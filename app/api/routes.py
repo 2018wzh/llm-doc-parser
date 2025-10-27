@@ -29,20 +29,20 @@ extract_service = ExtractService()
     description="从文件（MinIO或原始文本）根据指定字段schema提取数据",
 )
 async def extract(
-    source: str = Form(..., description="文件来源: 'minio' 或 'raw'"),
-    file: Optional[str] = Form(None, description="MinIO URL 或原始文本内容"),
+    source: str = Form(..., description="文件来源: 'minio' 或 'file'"),
+    url: Optional[str] = Form(None, description="MinIO URL"),
     schema_str: str = Form(..., alias="schema", description="JSON格式的Schema字段定义数组"),
     provider: str = Form("openai", description="LLM提供商: openai|azure|claude|gemini|custom"),
     model: Optional[str] = Form(None, description="LLM模型名称（可选）"),
-    upload_file: Optional[UploadFile] = File(None, description="上传的文件（可选，替代file参数）"),
+    file: Optional[UploadFile] = File(None, description="上传的文件"),
 ) -> ExtractResponse:
     """
     数据提取端点
     
     ### 请求参数（FormData）
-    - **source**: 文件来源，"minio"或"raw"（必需）
-    - **file**: MinIO URL 或原始文本内容（source为minio时必需）
-    - **upload_file**: 上传的文件（可选，可替代file参数）
+    - **source**: 文件来源，"minio"或"file"（必需）
+    - **url**: MinIO URL
+    - **file**: 上传的文件
     - **schema**: JSON格式的Schema字段定义数组（必需）
     - **provider**: LLM提供商，"openai"|"azure"|"claude"|"gemini"|"custom"（默认: openai）
     - **model**: LLM模型名称（可选）
@@ -55,7 +55,7 @@ async def extract(
     **使用 cURL (FormData):**
     ```bash
     curl -X POST http://localhost:8000/extract \\
-      -F "source=raw" \\
+      -F "source=file" \\
       -F "file=张三是一名程序员，出生于1990年5月15日" \\
       -F 'schema=[{"name":"人名","field":"name","type":"text","required":true}]' \\
       -F "provider=openai" \\
@@ -79,39 +79,47 @@ async def extract(
     """
     try:
         logger.info(f"收到提取请求: source={source}, provider={provider}")
+        if source == "file":
+            if not file:
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    detail={
+                        "code": "INVALID_INPUT",
+                        "message": "必须提供 file 参数",
+                    },
+                )
         
-        # 处理文件内容
-        file_content = file
-        file_extension = None
-        upload_filename = None
-        
-        if upload_file:
             # 如果上传了文件，读取其内容
-            file_bytes = await upload_file.read()
-            upload_filename = upload_file.filename
-            
+            file_bytes = await file.read()
+            upload_filename = file.filename
+    
             # 尝试解码为文本，如果失败则保留原始字节
             try:
                 if isinstance(file_bytes, bytes):
                     file_content = file_bytes.decode("utf-8")
+                    logger.info(f"读取上传文件（文本）: {upload_filename}")
                 else:
                     file_content = file_bytes
+                    logger.info(f"读取上传文件（二进制）: {upload_filename}")
             except UnicodeDecodeError:
-                # 如果是二进制文件（如PDF、Word等），保留原始内容
+                # 如果是二进制文件（如PDF、图片等），保留原始内容
                 # 后续交给 FileProcessingService 处理
                 file_content = file_bytes
-            
-            logger.info(f"读取上传文件: {upload_filename}")
-        
-        if not file_content:
-            raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail={
-                    "code": "INVALID_INPUT",
-                    "message": "必须提供 file 或 upload_file 参数之一",
-                },
-            )
-        
+                logger.info(f"读取上传文件（二进制）: {upload_filename}")
+        elif source == "minio":
+            if not url:
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    detail={
+                        "code": "INVALID_INPUT",
+                        "message": "必须提供 url 参数",
+                    },
+                )
+            upload_filename = ""
+            file_bytes = url
+        else:
+            raise ValueError("source 应为 file 或 minio")
+
         # 解析 schema JSON 字符串
         try:
             schema_list = json.loads(schema_str)

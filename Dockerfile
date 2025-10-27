@@ -12,6 +12,7 @@ ENV PYTHONUNBUFFERED=1 \
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     libpoppler-cpp-dev \
+    tesseract-ocr \
     && rm -rf /var/lib/apt/lists/*
 
 # 复制依赖文件

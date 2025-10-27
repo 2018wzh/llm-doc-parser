@@ -231,24 +231,6 @@ class FileProcessingService:
             raise FileProcessingException(f"文件处理失败: {str(e)}")
     
     @staticmethod
-    async def extract_text_from_raw(raw_text: str) -> str:
-        """
-        处理原始文本
-        
-        Args:
-            raw_text: 原始文本内容
-            
-        Returns:
-            处理后的文本内容
-        """
-        if not raw_text or not raw_text.strip():
-            raise FileProcessingException("原始文本内容为空")
-        
-        logger.info(f"处理原始文本，长度: {len(raw_text)} 字符")
-        
-        return raw_text.strip()
-    
-    @staticmethod
     def _get_file_extension(url: str) -> Optional[str]:
         """
         从URL获取文件扩展名

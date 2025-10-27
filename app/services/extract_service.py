@@ -3,7 +3,7 @@
 """
 import logging
 import os
-from typing import List, Optional
+from typing import List, Optional, Union
 
 from app.models import ExtractRequest, ExtractedValue, SchemaField
 from app.core import ValidationException
@@ -63,30 +63,33 @@ class ExtractService:
         logger.info(f"数据提取完成，共提取{len(extracted_data)}个字段")
         return extracted_data
     
-    async def _get_file_content(self, source: str, file_path: str) -> bytes:
+    async def _get_file_content(self, source: str, file_data: Union[str, bytes]) -> bytes:
         """
         获取文件内容
         
         Args:
             source: 文件来源 ("minio" 或 "raw")
-            file_path: 文件路径或URL
+            file_data: 文件路径/URL（用于minio）或文本/二进制数据（用于raw）
             
         Returns:
             文件内容字节
         """
         if source == "minio":
-            logger.info(f"从MinIO下载文件: {file_path}")
-            return await self.minio_service.download_file(file_path)
-        elif source == "raw":
-            # raw文本不需要下载，直接处理
-            return file_path.encode("utf-8")
+            logger.info(f"从MinIO下载文件: {file_data}")
+            return await self.minio_service.download_file(str(file_data))
+        elif source == "file":
+            # raw数据可能是字符串或二进制，需要转换为字节
+            if isinstance(file_data, bytes):
+                return file_data
+            else:
+                return str(file_data).encode("utf-8")
         else:
             raise ValidationException(f"不支持的文件来源: {source}")
     
     async def _extract_text(
         self,
         source: str,
-        file_path: str,
+        file_data: Union[str, bytes],
         file_content: bytes,
         filename: Optional[str] = None,
     ) -> str:
@@ -95,30 +98,20 @@ class ExtractService:
         
         Args:
             source: 文件来源
-            file_path: 文件路径或URL
+            file_data: 文件路径/URL或文本/二进制数据
             file_content: 文件内容字节
             filename: 原始文件名（可选，用于自动判断文件类型）
             
         Returns:
             提取的文本内容
         """
-        if source == "raw":
-            # raw文本直接处理
-            if isinstance(file_content, bytes):
-                text = file_content.decode("utf-8")
-            else:
-                text = str(file_content)
-            return await self.file_service.extract_text_from_raw(text)
-        elif source == "minio":
-            # 从MinIO URL获取文件扩展名
-            extension = self.file_service._get_file_extension(file_path)
-            return await self.file_service.extract_text_from_file(
-                file_content,
-                extension,
-                filename,
-            )
-        else:
-            raise ValidationException(f"不支持的文件来源: {source}")
+        # 从MinIO URL获取文件扩展名
+        extension = self.file_service._get_file_extension(str(file_data))
+        return await self.file_service.extract_text_from_file(
+            file_content,
+            extension,
+            filename,
+        )
     
     async def _extract_with_llm(
         self,
