@@ -90,3 +90,4 @@ media/
 .DS_Store
 *.exe
 *.log
+*.xml
