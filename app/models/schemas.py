@@ -9,6 +9,7 @@ class SchemaField(BaseModel):
     """Schema字段定义"""
     name: str = Field(..., description="字段详情")
     field: str = Field(..., description="字段名称")
+    description: Optional[str] = Field(None, description="字段描述")
     type: Literal["text", "int", "float", "boolean", "date", "datetime"] = Field(
         ..., description="字段类型"
     )
