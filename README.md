@@ -1,10 +1,8 @@
-# API
+# LLM Doc Parser
 
-## POST /extract
+使用unstructed+tesseract结合大语言模型进行结构化数据提取的服务。
 
-### 描述
-
-解析
+## API POST /extract
 
 ### 字段
 
@@ -36,7 +34,7 @@
     [
         {
             "name":"示例", // 字段详情
-	    "description":"描述" // 字段描述
+    	    "description":"描述" // 字段描述
             "field":"exampleField", // 字段名称
             "type":"text", // 可选text,int,float,boolean,date等
             "required": true // 字段是否必填
@@ -66,7 +64,7 @@ file: {上传文件}
             "name":"证书名称",
             "field":"certificateName",
             "type":"text",
-	    "description":"证书所属比赛的名称"
+	        "description":"证书所属比赛的名称"
             "required": true
         },
         {
