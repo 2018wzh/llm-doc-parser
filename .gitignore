@@ -88,3 +88,5 @@ media/
 *.swo
 *~
 .DS_Store
+*.exe
+*.log
