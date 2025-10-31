@@ -58,6 +58,7 @@ class OpenAICompatibleLLM(BaseLLM):
     async def extract(
         self,
         content: str,
+        image: Optional[bytes],
         schema: List[SchemaField],
         model: Optional[str] = None,
     ) -> List[ExtractedValue]:
@@ -69,22 +70,56 @@ class OpenAICompatibleLLM(BaseLLM):
             prompt = self._build_prompt(content, schema)
             
             logger.info(f"开始调用 OpenAI 兼容 API，基础 URL: {self.base_url}，模型: {model_to_use}")
-            
-            response = await self.client.chat.completions.create(
-                model=model_to_use,
-                messages=[
-                    {
-                        "role": "system",
-                        "content": self._get_system_prompt(),
-                    },
-                    {
-                        "role": "user",
-                        "content": prompt,
-                    },
-                ],
-                temperature=0,
-                max_tokens=4096,
-            )
+
+            if image:
+                import base64
+                import magic
+                mime_type = magic.from_buffer(image, mime=True)
+                image_base64 = base64.b64encode(image).decode('utf-8')
+                image_url = f"data:{mime_type};base64,{image_base64}"
+                response = await self.client.chat.completions.create(
+                    model=model_to_use,
+                    messages=[
+                        {
+                            "role": "system",
+                            "content": self._get_system_prompt(),
+                        },
+                        {
+                            "role": "user",
+                            "content": [
+                                {
+                                    "type": "text",
+                                    "text": prompt,
+                                },
+                                {
+                                    "type": "image_url",
+                                    "image_url": {
+                                        "url": image_url,
+                                    },
+                                }
+                            ]
+                        },
+
+                    ],
+                    temperature=0,
+                    max_tokens=4096,
+                )
+            else:
+                response = await self.client.chat.completions.create(
+                    model=model_to_use,
+                    messages=[
+                        {
+                            "role": "system",
+                            "content": self._get_system_prompt(),
+                        },
+                        {
+                            "role": "user",
+                            "content": prompt,
+                        },
+                    ],
+                    temperature=0,
+                    max_tokens=4096,
+                )
             
             response_text = response.choices[0].message.content
             
@@ -199,6 +234,7 @@ class OpenAICompatibleLLM(BaseLLM):
         self,
         content: str,
         schema: List[SchemaField],
+        image: Optional[bytes] = None,
     ) -> str:
         """构建优化的 Prompt"""
         schema_json = json.dumps(
@@ -228,7 +264,7 @@ class OpenAICompatibleLLM(BaseLLM):
             indent=2,
         )
         
-        prompt = f"""请从以下文本内容中提取信息，并按照指定的schema返回JSON数据。
+        prompt = f"""请从以下文本或图像内容中提取信息，并按照指定的schema返回JSON数据。
 
 【Schema定义】
 {schema_json}

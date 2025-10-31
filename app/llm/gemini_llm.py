@@ -3,7 +3,7 @@ Google Gemini LLM 实现
 """
 import json
 import logging
-from typing import List
+from typing import List, Optional, Any, cast
 
 try:
     import google.generativeai as genai
@@ -25,7 +25,7 @@ class GeminiLLM(BaseLLM):
         """提供商名称"""
         return "gemini"
     
-    def __init__(self, api_key: str = None):
+    def __init__(self, api_key: Optional[str] = None):
         """
         初始化 Gemini 客户端
         
@@ -36,31 +36,46 @@ class GeminiLLM(BaseLLM):
             raise LLMException("Gemini 不可用，请安装: pip install google-generativeai")
         
         if api_key:
-            genai.configure(api_key=api_key)
+            cast(Any, genai).configure(api_key=api_key)  # type: ignore[attr-defined]
         else:
-            genai.configure()
+            cast(Any, genai).configure()  # type: ignore[attr-defined]
     
     async def extract(
         self,
         content: str,
+        image: Optional[bytes],
         schema: List[SchemaField],
         model: str,
     ) -> List[ExtractedValue]:
         """使用 Gemini 提取数据"""
         try:
-            prompt = self._build_prompt(content, schema)
+            prompt = self._build_prompt(content, schema, image=image)
             
             logger.info(f"开始调用 Gemini，模型: {model}")
             
             # Gemini 不原生支持异步，这里使用同步调用
             # 如果需要真正的异步，可以使用 ThreadPoolExecutor
-            model_instance = genai.GenerativeModel(
+            model_instance = cast(Any, genai).GenerativeModel(  # type: ignore[attr-defined]
                 model_name=model,
                 system_instruction=self._get_system_prompt(),
             )
             
-            response = model_instance.generate_content(prompt)
-            response_text = response.text
+            # 生成内容（支持图像）
+            if image:
+                try:
+                    import magic
+                    mime_type = magic.from_buffer(image, mime=True)
+                except Exception:
+                    mime_type = "image/png"
+                parts = [
+                    prompt,
+                    {"mime_type": mime_type, "data": image},  # type: ignore[arg-type]
+                ]
+                response = model_instance.generate_content(parts)
+            else:
+                response = model_instance.generate_content(prompt)
+
+            response_text = getattr(response, "text", "") or ""
             
             logger.info("Gemini 调用成功")
             
@@ -111,7 +126,7 @@ class GeminiLLM(BaseLLM):
     async def validate_connection(self) -> bool:
         """验证连接"""
         try:
-            model = genai.GenerativeModel("gemini-1.5-flash")
+            model = cast(Any, genai).GenerativeModel("gemini-1.5-flash")  # type: ignore[attr-defined]
             response = model.generate_content("test")
             return bool(response.text)
         except Exception as e:
@@ -139,6 +154,7 @@ class GeminiLLM(BaseLLM):
         self,
         content: str,
         schema: List[SchemaField],
+        image: Optional[bytes] = None,
     ) -> str:
         """构建优化的 Prompt"""
         schema_json = json.dumps(
@@ -238,12 +254,13 @@ class GeminiLLM(BaseLLM):
                     logger.warning(f"字段 {field_name} 不在schema中，跳过")
                     continue
                 
-                converted_value = self._convert_value(value, field_type)
+                field_type_str = str(field_type) if field_type is not None else "text"
+                converted_value = self._convert_value(value, field_type_str)
                 
                 extracted_values.append(
                     ExtractedValue(
                         field=field_name,
-                        type=field_type,
+                        type=field_type_str,
                         value=converted_value,
                     )
                 )

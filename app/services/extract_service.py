@@ -37,27 +37,43 @@ class ExtractService:
             其他异常: 处理过程中的异常
         """
         logger.info(f"开始数据提取: source={request.source}, provider={request.provider}, model={request.model}")
-        
+
         # 1. 获取文件内容
         logger.info("步骤1: 获取文件内容")
         file_content = await self._get_file_content(request.source, request.file)
-        
-        # 2. 提取文本
-        logger.info("步骤2: 从文件提取文本")
-        text_content = await self._extract_text(
-            request.source,
-            request.file,
-            file_content,
-            request.filename,
-        )
+        image_bytes: Optional[bytes] = None
+
+        # 2. 判别是否为图像文件；若为图像，跳过OCR，直接走LLM视觉
+        logger.info("步骤2: 判别文件类型并准备多模态输入")
+        detected_ext = None
+        try:
+            detected_ext = self.file_service.detect_file_type(file_content, request.filename)
+        except Exception:
+            detected_ext = None
+
+        is_image = bool(detected_ext and detected_ext.lower() in self.file_service.IMAGE_TYPES)
+
+        if is_image:
+            logger.info(f"检测到图像类型: {detected_ext}，跳过OCR，直接使用LLM视觉能力")
+            text_content = ""
+            image_bytes = file_content
+        else:
+            logger.info("非图像文件，提取文本内容供LLM使用")
+            text_content = await self._extract_text(
+                request.source,
+                request.file,
+                file_content,
+                request.filename,
+            )
         
         # 3. 使用LLM提取数据
         logger.info("步骤3: 使用LLM提取数据")
         extracted_data = await self._extract_with_llm(
-            text_content,
-            request.fields,
-            request.provider,
-            request.model,
+            text_content=text_content,
+            image=image_bytes,
+            schema=request.fields,
+            provider=request.provider,
+            model=request.model,
         )
         
         logger.info(f"数据提取完成，共提取{len(extracted_data)}个字段")
@@ -116,6 +132,7 @@ class ExtractService:
     async def _extract_with_llm(
         self,
         text_content: str,
+        image: Optional[bytes],
         schema: List[SchemaField],
         provider: str,
         model: Optional[str] = None,
@@ -153,7 +170,8 @@ class ExtractService:
         
         # 使用LLM提取数据
         return await llm.extract(
-            text_content,
-            schema,
-            model or "default",
+            content=text_content,
+            image=image,
+            schema=schema,
+            model=model or "default",
         )
