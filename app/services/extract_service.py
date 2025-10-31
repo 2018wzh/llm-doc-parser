@@ -42,24 +42,29 @@ class ExtractService:
         logger.info("步骤1: 获取文件内容")
         file_content = await self._get_file_content(request.source, request.file)
         image_bytes: Optional[bytes] = None
-        
-        # 2. 提取文本
-        logger.info("步骤2: 从文件提取文本")
-        text_content = await self._extract_text(
-            request.source,
-            request.file,
-            file_content,
-            request.filename,
-        )
-        # 如果原始文件是图片，保留其字节用于多模态模型
+
+        # 2. 判别是否为图像文件；若为图像，跳过OCR，直接走LLM视觉
+        logger.info("步骤2: 判别文件类型并准备多模态输入")
+        detected_ext = None
         try:
-            import magic  # type: ignore
-            mime_type = magic.from_buffer(file_content, mime=True)
-            if isinstance(mime_type, str) and mime_type.startswith("image/"):
-                image_bytes = file_content
+            detected_ext = self.file_service.detect_file_type(file_content, request.filename)
         except Exception:
-            # 忽略 MIME 检测失败
-            pass
+            detected_ext = None
+
+        is_image = bool(detected_ext and detected_ext.lower() in self.file_service.IMAGE_TYPES)
+
+        if is_image:
+            logger.info(f"检测到图像类型: {detected_ext}，跳过OCR，直接使用LLM视觉能力")
+            text_content = ""
+            image_bytes = file_content
+        else:
+            logger.info("非图像文件，提取文本内容供LLM使用")
+            text_content = await self._extract_text(
+                request.source,
+                request.file,
+                file_content,
+                request.filename,
+            )
         
         # 3. 使用LLM提取数据
         logger.info("步骤3: 使用LLM提取数据")
