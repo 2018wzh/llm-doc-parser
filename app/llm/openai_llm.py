@@ -3,7 +3,7 @@ OpenAI LLM实现
 """
 import json
 import logging
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 from openai import AsyncOpenAI
 
 from app.models import SchemaField, ExtractedValue
@@ -26,6 +26,7 @@ class OpenAILLM(BaseLLM):
     async def extract(
         self,
         content: str,
+        image: Optional[bytes],
         schema: List[SchemaField],
         model: str,
     ) -> List[ExtractedValue]:
@@ -46,25 +47,41 @@ class OpenAILLM(BaseLLM):
             
             logger.info(f"开始调用OpenAI API，模型: {model}")
             
-            # 调用OpenAI API
-            response = await self.client.chat.completions.create(
-                model=model,
-                messages=[
-                    {
-                        "role": "system",
-                        "content": self._get_system_prompt(),
-                    },
-                    {
-                        "role": "user",
-                        "content": prompt,
-                    },
-                ],
-                temperature=0,  # 降低温度以获得更稳定的结果
-                response_format={"type": "json_object"},
-            )
+            # 调用OpenAI API（支持多模态图像）
+            if image:
+                import base64
+                import magic
+                mime_type = magic.from_buffer(image, mime=True)
+                image_base64 = base64.b64encode(image).decode("utf-8")
+                image_url = f"data:{mime_type};base64,{image_base64}"
+                response = await self.client.chat.completions.create(
+                    model=model,
+                    messages=[
+                        {"role": "system", "content": self._get_system_prompt()},
+                        {
+                            "role": "user",
+                            "content": [
+                                {"type": "text", "text": prompt},
+                                {"type": "image_url", "image_url": {"url": image_url}},
+                            ],
+                        },
+                    ],
+                    temperature=0,
+                    max_tokens=4096,
+                )
+            else:
+                response = await self.client.chat.completions.create(
+                    model=model,
+                    messages=[
+                        {"role": "system", "content": self._get_system_prompt()},
+                        {"role": "user", "content": prompt},
+                    ],
+                    temperature=0,
+                    response_format={"type": "json_object"},
+                )
             
             # 提取响应内容
-            response_text = response.choices[0].message.content
+            response_text = response.choices[0].message.content or ""
             
             logger.info("OpenAI API调用成功")
             
@@ -99,6 +116,7 @@ class OpenAILLM(BaseLLM):
         self,
         content: str,
         schema: List[SchemaField],
+        image: Optional[bytes] = None,
     ) -> str:
         """
         构建优化的Prompt
@@ -224,12 +242,13 @@ class OpenAILLM(BaseLLM):
                     continue
                 
                 # 类型转换和验证
-                converted_value = self._convert_value(value, field_type)
+                field_type_str = str(field_type) if field_type is not None else "text"
+                converted_value = self._convert_value(value, field_type_str)
                 
                 extracted_values.append(
                     ExtractedValue(
                         field=field_name,
-                        type=field_type,
+                        type=field_type_str,
                         value=converted_value,
                     )
                 )

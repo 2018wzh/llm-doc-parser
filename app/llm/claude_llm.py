@@ -3,7 +3,7 @@ Anthropic Claude LLM 实现
 """
 import json
 import logging
-from typing import List
+from typing import List, Optional
 
 try:
     import anthropic
@@ -25,7 +25,7 @@ class ClaudeLLM(BaseLLM):
         """提供商名称"""
         return "claude"
     
-    def __init__(self, api_key: str = None):
+    def __init__(self, api_key: Optional[str] = None):
         """
         初始化 Claude 客户端
         
@@ -40,27 +40,61 @@ class ClaudeLLM(BaseLLM):
     async def extract(
         self,
         content: str,
+        image: Optional[bytes],
         schema: List[SchemaField],
         model: str,
     ) -> List[ExtractedValue]:
         """使用 Claude 提取数据"""
         try:
-            prompt = self._build_prompt(content, schema)
+            prompt = self._build_prompt(content, schema, image=image)
             
             logger.info(f"开始调用 Claude，模型: {model}")
             
-            message = await self.client.messages.create(
-                model=model,
-                max_tokens=2048,
-                messages=[
-                    {
-                        "role": "user",
-                        "content": f"{self._get_system_prompt()}\n\n{prompt}",
-                    }
-                ],
-            )
+            # 组织消息（支持图像）
+            if image:
+                import base64
+                import magic
+                mime_type = magic.from_buffer(image, mime=True)
+                image_base64 = base64.b64encode(image).decode("utf-8")
+                message = await self.client.messages.create(  # type: ignore[arg-type]
+                    model=model,
+                    max_tokens=2048,
+                    system=self._get_system_prompt(),
+                    messages=[
+                        {
+                            "role": "user",
+                            "content": [
+                                {"type": "text", "text": prompt},
+                                {
+                                    "type": "image",
+                                    "source": {
+                                        "type": "base64",
+                                        "media_type": mime_type,
+                                        "data": image_base64,
+                                    },
+                                },
+                            ],
+                        }
+                    ],
+                )
+            else:
+                message = await self.client.messages.create(  # type: ignore[arg-type]
+                    model=model,
+                    max_tokens=2048,
+                    system=self._get_system_prompt(),
+                    messages=[
+                        {"role": "user", "content": prompt},
+                    ],
+                )
             
-            response_text = message.content[0].text
+            response_text = ""
+            try:
+                for block in getattr(message, "content", []) or []:
+                    text = getattr(block, "text", None)
+                    if isinstance(text, str):
+                        response_text += text
+            except Exception:
+                response_text = ""
             logger.info("Claude 调用成功")
             
             return self._parse_response(response_text, schema)
@@ -141,6 +175,7 @@ class ClaudeLLM(BaseLLM):
         self,
         content: str,
         schema: List[SchemaField],
+        image: Optional[bytes] = None,
     ) -> str:
         """构建优化的 Prompt"""
         schema_json = json.dumps(
@@ -240,12 +275,13 @@ class ClaudeLLM(BaseLLM):
                     logger.warning(f"字段 {field_name} 不在schema中，跳过")
                     continue
                 
-                converted_value = self._convert_value(value, field_type)
+                field_type_str = str(field_type) if field_type is not None else "text"
+                converted_value = self._convert_value(value, field_type_str)
                 
                 extracted_values.append(
                     ExtractedValue(
                         field=field_name,
-                        type=field_type,
+                        type=field_type_str,
                         value=converted_value,
                     )
                 )

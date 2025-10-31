@@ -37,10 +37,11 @@ class ExtractService:
             其他异常: 处理过程中的异常
         """
         logger.info(f"开始数据提取: source={request.source}, provider={request.provider}, model={request.model}")
-        
+
         # 1. 获取文件内容
         logger.info("步骤1: 获取文件内容")
         file_content = await self._get_file_content(request.source, request.file)
+        image_bytes: Optional[bytes] = None
         
         # 2. 提取文本
         logger.info("步骤2: 从文件提取文本")
@@ -50,14 +51,24 @@ class ExtractService:
             file_content,
             request.filename,
         )
+        # 如果原始文件是图片，保留其字节用于多模态模型
+        try:
+            import magic  # type: ignore
+            mime_type = magic.from_buffer(file_content, mime=True)
+            if isinstance(mime_type, str) and mime_type.startswith("image/"):
+                image_bytes = file_content
+        except Exception:
+            # 忽略 MIME 检测失败
+            pass
         
         # 3. 使用LLM提取数据
         logger.info("步骤3: 使用LLM提取数据")
         extracted_data = await self._extract_with_llm(
-            text_content,
-            request.fields,
-            request.provider,
-            request.model,
+            text_content=text_content,
+            image=image_bytes,
+            schema=request.fields,
+            provider=request.provider,
+            model=request.model,
         )
         
         logger.info(f"数据提取完成，共提取{len(extracted_data)}个字段")
@@ -116,6 +127,7 @@ class ExtractService:
     async def _extract_with_llm(
         self,
         text_content: str,
+        image: Optional[bytes],
         schema: List[SchemaField],
         provider: str,
         model: Optional[str] = None,
@@ -153,7 +165,8 @@ class ExtractService:
         
         # 使用LLM提取数据
         return await llm.extract(
-            text_content,
-            schema,
-            model or "default",
+            content=text_content,
+            image=image,
+            schema=schema,
+            model=model or "default",
         )

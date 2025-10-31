@@ -47,6 +47,7 @@ class BaseLLM(ABC):
     async def extract(
         self,
         content: str,
+        image: Optional[bytes],
         schema: List[SchemaField],
         model: str,
     ) -> List[ExtractedValue]:
@@ -68,6 +69,7 @@ class BaseLLM(ABC):
         self,
         content: str,
         schema: List[SchemaField],
+        image: Optional[bytes] = None,
     ) -> str:
         """
         构建优化的Prompt
@@ -75,6 +77,7 @@ class BaseLLM(ABC):
         Args:
             content: 文件内容
             schema: 数据schema
+            image: 图像内容（可选）
             
         Returns:
             优化的Prompt文本
