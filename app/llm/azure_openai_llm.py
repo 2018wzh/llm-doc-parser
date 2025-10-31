@@ -49,7 +49,7 @@ class AzureOpenAILLM(BaseLLM):
                     {"role": "system", "content": self._get_system_prompt()},
                     {"role": "user", "content": prompt},
                 ],
-                temperature=0.1,
+                temperature=0,
                 response_format={"type": "json_object"},
             )
             

@@ -59,7 +59,7 @@ class OpenAILLM(BaseLLM):
                         "content": prompt,
                     },
                 ],
-                temperature=0.1,  # 降低温度以获得更稳定的结果
+                temperature=0,  # 降低温度以获得更稳定的结果
                 response_format={"type": "json_object"},
             )
             
