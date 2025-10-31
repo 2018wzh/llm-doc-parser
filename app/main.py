@@ -7,6 +7,10 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 
+# 在导入其他模块之前加载环境变量
+import dotenv
+dotenv.load_dotenv()
+
 from app.core import settings, AppException
 from app.api import router
 
@@ -25,6 +29,8 @@ async def lifespan(app: FastAPI):
     """
     # 启动事件
     logger.info(f"启动应用: {settings.APP_TITLE} v{settings.APP_VERSION}")
+    logger.info(f"LLM提供商: {settings.LLM_PROVIDER}")
+    logger.info(f"环境变量加载完成，DEBUG模式: {settings.DEBUG}")
     yield
     # 关闭事件
     logger.info("应用已关闭")
