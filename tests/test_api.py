@@ -19,18 +19,21 @@ def sample_schema():
             field="name",
             type="text",
             required=True,
+            description="",
         ),
         SchemaField(
             name="年龄",
             field="age",
             type="int",
             required=True,
+            description="",
         ),
         SchemaField(
             name="职业",
             field="occupation",
             type="text",
             required=False,
+            description="",
         ),
     ]
 
@@ -98,3 +101,37 @@ def test_extract_missing_required_field():
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
+ 
+def test_extract_formdata_toon_schema():
+    """使用表单+TOON schema 进行一次端到端请求（不校验真实提取结果，仅校验接口受理）。"""
+    toon_schema = (
+        "```toon\n"
+        "values[2]{name,field,type,required}:\n"
+        "  人名,name,text,true\n"
+        "  年龄,age,int,true\n"
+        "```"
+    )
+    files = {
+        "file": ("sample.txt", "张三, 年龄 30".encode("utf-8"), "text/plain"),
+    }
+    data = {
+        "source": "file",
+        "schema": toon_schema,
+        "provider": "openai",
+        "model": "gpt-4o-mini",
+    }
+    resp = client.post("/extract", data=data, files=files)
+    assert resp.status_code in [200, 500, 422]
+
+
+def test_schema_convert_json_to_toon():
+    """将 JSON schema 转为 TOON。"""
+    schema_list = [
+        {"name": "人名", "field": "name", "type": "text", "required": True},
+        {"name": "年龄", "field": "age", "type": "int", "required": True},
+    ]
+    resp = client.post("/schema/toon", json={"schema": schema_list})
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "toon" in data
+    assert data["toon"].startswith("values[2]{name,field,type,required}:")

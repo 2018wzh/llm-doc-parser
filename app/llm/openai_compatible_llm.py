@@ -1,5 +1,5 @@
 """
-OpenAI 兼容的 Custom LLM 实现
+OpenAI 兼容的 Custom LLM 实现（TOON 输出）
 
 支持任何兼容 OpenAI API 的服务，例如：
 - LM Studio 本地服务
@@ -17,6 +17,12 @@ from openai import AsyncOpenAI
 from app.models import SchemaField, ExtractedValue
 from app.core import LLMException, settings
 from .base import BaseLLM, ModelInfo
+from app.utils.toon_utils import (
+    extract_toon_block,
+    toon_decode,
+    extract_values_list,
+    schema_to_toon,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -121,7 +127,7 @@ class OpenAICompatibleLLM(BaseLLM):
                     max_tokens=4096,
                 )
             
-            response_text = response.choices[0].message.content
+            response_text = response.choices[0].message.content or ""
             
             logger.info("OpenAI 兼容 API 调用成功")
             
@@ -214,21 +220,20 @@ class OpenAICompatibleLLM(BaseLLM):
             return False
     
     def _get_system_prompt(self) -> str:
-        """获取系统提示词"""
-        return """你是一个专业的数据提取助手。你的任务是从给定的文本内容中，
-根据提供的schema定义，准确地提取相关信息并以JSON格式返回。
-
-重要要求：
-1. 仅提取schema中定义的字段
-2. 严格按照指定的字段类型进行类型转换
-3. 如果字段标记为required且内容中找不到相关信息，则设置为null
-4. 对于日期字段，使用ISO 8601格式(YYYY-MM-DD或YYYY-MM-DD HH:mm:ss)
-5. 布尔值必须是true或false
-6. 数值字段保持数值类型，不要转换为字符串
-7. 如果字段值不存在或为空，返回null而不是空字符串
-8. 返回的JSON数组中每个对象都必须包含field、type和value三个字段
-9. 确保JSON格式完整有效
-"""
+        """获取系统提示词（TOON 输出）"""
+        return (
+            "你是一个专业的数据提取助手。请根据提供的 schema，从给定内容中提取字段，"
+            "并使用 TOON (Token-Oriented Object Notation) 格式返回结果。\n\n"
+            "重要要求：\n"
+            "1. 仅提取 schema 中定义的字段\n"
+            "2. 严格按照指定的字段类型进行类型转换\n"
+            "3. 必填字段找不到时返回 null\n"
+            "4. 日期/时间使用 ISO 8601 格式\n"
+            "5. 布尔值使用 true/false\n"
+            "6. 数值保持数值类型\n"
+            "7. 以 TOON 的表格数组格式输出，表头固定为 values[N]{field,type,value}:，N 为行数\n"
+            "8. 使用 2 空格缩进；不要添加任何额外文字，仅返回 TOON 内容\n"
+        )
     
     def _build_prompt(
         self,
@@ -236,45 +241,36 @@ class OpenAICompatibleLLM(BaseLLM):
         schema: List[SchemaField],
         image: Optional[bytes] = None,
     ) -> str:
-        """构建优化的 Prompt"""
-        schema_json = json.dumps(
-            [
-                {
-                    "name": field.name,
-                    "field": field.field,
-                    "type": field.type,
-                    "required": field.required,
-                }
-                for field in schema
-            ],
-            ensure_ascii=False,
-            indent=2,
-        )
-        
-        output_example = json.dumps(
-            [
-                {
-                    "field": field.field,
-                    "type": field.type,
-                    "value": self._get_example_value(field.type),
-                }
-                for field in schema
-            ],
-            ensure_ascii=False,
-            indent=2,
-        )
-        
-        prompt = f"""请从以下文本或图像内容中提取信息，并按照指定的schema返回JSON数据。
+        """构建优化的 Prompt（TOON 输出示例）"""
+        schema_rows = [
+            {"name": f.name, "field": f.field, "type": f.type, "required": f.required}
+            for f in schema
+        ]
+        schema_toon = schema_to_toon(schema_rows)
 
-【Schema定义】
-{schema_json}
+        # 构建 TOON 输出格式示例
+        rows = []
+        for field in schema:
+            example = self._get_example_value(field.type)
+            example_str = "true" if example is True else ("false" if example is False else str(example))
+            rows.append(f"  {field.field},{field.type},{example_str}")
+        toon_example = f"values[{len(schema)}]{{field,type,value}}:\n" + "\n".join(rows)
+
+        prompt = f"""请从以下文本或图像内容中提取信息，并按照指定的 schema 返回 TOON 数据。
+
+【Schema定义（TOON）】
+```toon
+{schema_toon}
+```
 
 【待提取的文本内容】
 {content}
 
-【输出格式要求】
-返回一个JSON数组，每个对象包含field、type和value三个字段。示例：
-{output_example}
+【输出格式要求（TOON）】
+请严格输出如下 TOON 表结构：
+```toon
+{toon_example}
+```
 
 【特别说明】
 - 仅提取schema中定义的字段
@@ -283,10 +279,9 @@ class OpenAICompatibleLLM(BaseLLM):
 - 日期字段使用ISO 8601格式
 - 布尔值使用true/false
 - 数值保持数值类型
-- 返回有效的JSON数组
+ 
+请仅返回 TOON 内容，不要添加其他说明文字。"""
 
-请直接返回JSON数组，不要添加其他说明文字。"""
-        
         return prompt
     
     def _get_example_value(self, field_type: str):
@@ -306,47 +301,40 @@ class OpenAICompatibleLLM(BaseLLM):
         response: str,
         schema: List[SchemaField],
     ) -> List[ExtractedValue]:
-        """解析 LLM 响应"""
+        """解析 LLM 响应（TOON）"""
         try:
-            # 处理可能的 markdown 代码块
-            if "```json" in response:
-                response = response.split("```json")[1].split("```")[0].strip()
-            elif "```" in response:
-                response = response.split("```")[1].split("```")[0].strip()
-            
-            response_data = json.loads(response)
-            
-            if not isinstance(response_data, list):
-                response_data = [response_data]
-            
+            toon_text = extract_toon_block(response or "")
+            parsed = toon_decode(toon_text)
+            rows = extract_values_list(parsed)
+
             schema_dict = {field.field: field for field in schema}
-            
-            extracted_values = []
-            for item in response_data:
-                if not isinstance(item, dict):
-                    continue
-                
+
+            extracted_values: List[ExtractedValue] = []
+            for item in rows:
                 field_name = item.get("field")
                 field_type = item.get("type")
                 value = item.get("value")
-                
+
+                if not isinstance(field_name, str):
+                    continue
                 if field_name not in schema_dict:
                     logger.warning(f"字段 {field_name} 不在schema中，跳过")
                     continue
-                
-                converted_value = self._convert_value(value, field_type)
-                
+
+                field_type_str = str(field_type) if field_type is not None else "text"
+                converted_value = self._convert_value(value, field_type_str)
+
                 extracted_values.append(
                     ExtractedValue(
                         field=field_name,
-                        type=field_type,
+                        type=field_type_str,
                         value=converted_value,
                     )
                 )
             
-            logger.info(f"成功解析{len(extracted_values)}个字段")
+            logger.info(f"成功解析{len(extracted_values)}个字段 (TOON)")
             return extracted_values
             
-        except json.JSONDecodeError as e:
-            logger.error(f"JSON解析失败: {str(e)}")
-            raise LLMException(f"无法解析LLM响应: {str(e)}")
+        except Exception as e:
+            logger.error(f"TOON 解析失败: {str(e)}")
+            raise LLMException(f"无法解析LLM的 TOON 响应: {str(e)}")

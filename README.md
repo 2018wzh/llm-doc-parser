@@ -43,13 +43,70 @@
 }
 ```
 
+### Schema（TOON 格式，等价支持）
+
+也可以使用 TOON 表格描述 Schema，更适合粘贴/阅读：
+
+```toon
+values[3]{name,field,type,required}:
+    证书名称,certificateName,text,true
+    人名,ownerName,text,true
+    证书时间,certificateTime,date,true
+```
+
+## 工具接口：JSON Schema 转 TOON
+
+当你手头已有 JSON 版 schema，需要快速得到 TOON 版以便粘贴或调试时，可调用：
+
+- POST `/schema/toon`
+    - 支持两种提交方式：
+        - JSON Body：`{"schema": [ {name, field, type, required}, ... ] }`
+        - FormData：`schema=...`（可为 JSON 数组或 TOON 表格）
+    - 返回：`{"toon": "values[N]{name,field,type,required}:\n  ..."}`
+
+示例（JSON Body）：
+
+```json
+POST /schema/toon
+{
+    "schema": [
+        {"name":"证书名称","field":"certificateName","type":"text","required":true},
+        {"name":"人名","field":"ownerName","type":"text","required":true}
+    ]
+}
+```
+
+响应：
+
+```toon
+values[2]{name,field,type,required}:
+    证书名称,certificateName,text,true
+    人名,ownerName,text,true
+```
+
+说明：
+- 表头固定为 `values[N]{name,field,type,required}:`，`N` 为行数。
+- 每一行对应一个字段，按顺序给出 `name,field,type,required`。
+- required 使用 `true/false`。
+
 ## 示例
 
 ### Body
 
 ```
 source: file
-schema: [{"name":"证书名称","field":"certificateName","type":"text","required":true},{"name":"人名","field":"ownerName","type":"text","required":true},{"name":"证书内容","field":"certificateContent","type":"text","required":true},{"name":"证书时间","field":"certificateTime","type":"date","required":true},{"name":"颁发机构","field":"certificateAuthority","type":"text","required":true},{"name":"证书等级","field":"certificateLevel","type":"text","required":false}]
+schema: 可以是 JSON 数组 或 TOON 表格。例如 TOON：
+
+```toon
+values[6]{name,field,type,required}:
+    证书名称,certificateName,text,true
+    人名,ownerName,text,true
+    证书内容,certificateContent,text,true
+    证书时间,certificateTime,date,true
+    颁发机构,certificateAuthority,text,true
+    证书等级,certificateLevel,text,false
+```
+
 provider: custom
 model: ecnu-plus
 file: {上传文件}
