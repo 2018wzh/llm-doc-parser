@@ -3,12 +3,18 @@
 """
 import logging
 import json
-from fastapi import APIRouter, HTTPException, status, Form, File, UploadFile
+from fastapi import APIRouter, HTTPException, status, Form, File, UploadFile, Request
 from typing import Optional, List
 
 from app.models import ExtractRequest, ExtractResponse, ErrorResponse, SchemaField
 from app.core import AppException
 from app.services import ExtractService
+from app.utils.toon_utils import (
+    extract_toon_block,
+    toon_decode,
+    extract_schema_list,
+    schema_to_toon as build_schema_toon,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -31,7 +37,7 @@ extract_service = ExtractService()
 async def extract(
     source: str = Form(..., description="文件来源: 'minio' 或 'file'"),
     url: Optional[str] = Form(None, description="MinIO URL"),
-    schema_str: str = Form(..., alias="schema", description="JSON格式的Schema字段定义数组"),
+    schema_str: str = Form(..., alias="schema", description="Schema字段定义（JSON 或 TOON）"),
     provider: str = Form("openai", description="LLM提供商: openai|azure|claude|gemini|custom"),
     model: Optional[str] = Form(None, description="LLM模型名称（可选）"),
     file: Optional[UploadFile] = File(None, description="上传的文件"),
@@ -43,7 +49,7 @@ async def extract(
     - **source**: 文件来源，"minio"或"file"（必需）
     - **url**: MinIO URL
     - **file**: 上传的文件
-    - **schema**: JSON格式的Schema字段定义数组（必需）
+    - **schema**: JSON 或 TOON 格式的 Schema 字段定义数组（必需）
     - **provider**: LLM提供商，"openai"|"azure"|"claude"|"gemini"|"custom"（默认: openai）
     - **model**: LLM模型名称（可选）
     
@@ -120,32 +126,33 @@ async def extract(
         else:
             raise ValueError("source 应为 file 或 minio")
 
-        # 解析 schema JSON 字符串
+        # 解析 schema（优先 JSON，其次 TOON）
+        schema_fields: List[SchemaField]
+        parse_error_detail = None
         try:
             schema_list = json.loads(schema_str)
             if not isinstance(schema_list, list):
                 raise ValueError("schema 必须是数组")
-            
-            # 转换为 SchemaField 对象
             schema_fields = [SchemaField(**item) for item in schema_list]
-        except json.JSONDecodeError as e:
-            logger.error(f"Schema JSON 解析失败: {str(e)}")
-            raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail={
-                    "code": "INVALID_SCHEMA",
-                    "message": f"Schema JSON 格式无效: {str(e)}",
-                },
-            )
-        except (ValueError, TypeError) as e:
-            logger.error(f"Schema 字段转换失败: {str(e)}")
-            raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail={
-                    "code": "INVALID_SCHEMA",
-                    "message": f"Schema 字段定义无效: {str(e)}",
-                },
-            )
+        except Exception as json_err:
+            parse_error_detail = str(json_err)
+            # 尝试 TOON
+            try:
+                toon_text = extract_toon_block(schema_str)
+                parsed = toon_decode(toon_text)
+                schema_dicts = extract_schema_list(parsed)
+                if not schema_dicts:
+                    raise ValueError("无法从 TOON 中解析到字段定义列表")
+                schema_fields = [SchemaField(**item) for item in schema_dicts]
+            except Exception as toon_err:
+                logger.error(f"Schema 解析失败 - JSON: {parse_error_detail}; TOON: {toon_err}")
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    detail={
+                        "code": "INVALID_SCHEMA",
+                        "message": "Schema 格式无效，请提供 JSON 数组或 TOON 表格（values[N]{name,field,type,required}:）",
+                    },
+                )
         
         # 创建请求对象
         request = ExtractRequest(
@@ -183,5 +190,65 @@ async def extract(
             detail={
                 "code": "INTERNAL_ERROR",
                 "message": "服务器内部错误",
+            },
+        )
+
+
+@router.post(
+    "/schema/toon",
+    summary="将 JSON Schema 转换为 TOON",
+    description=(
+        "接受 schema（JSON 数组或表单字段 schema），返回标准 TOON 表格：\n"
+        "values[N]{name,field,type,required}:\n  ..."
+    ),
+)
+async def convert_schema_to_toon(
+    request: Request,
+    schema_str: str | None = Form(None, alias="schema"),
+):
+    try:
+        schema_list = None
+
+        # 优先使用表单中的 schema
+        if schema_str:
+            try:
+                schema_list = json.loads(schema_str)
+            except Exception:
+                # 也支持直接给 TOON，这里先解成 list 再重新规范化为 TOON
+                toon_text = extract_toon_block(schema_str)
+                parsed = toon_decode(toon_text)
+                schema_list = extract_schema_list(parsed)
+
+        # 如果不是表单，尝试 JSON Body
+        if schema_list is None:
+            try:
+                body = await request.json()
+                candidate = body.get("schema") if isinstance(body, dict) else None
+                if isinstance(candidate, list):
+                    schema_list = candidate
+            except Exception:
+                pass
+
+        if not isinstance(schema_list, list):
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail={
+                    "code": "INVALID_SCHEMA",
+                    "message": "请提供 schema（表单字段或 JSON Body），JSON 数组或 TOON 表格均可",
+                },
+            )
+
+        toon_text = build_schema_toon(schema_list)
+        return {"toon": toon_text}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Schema 转换失败: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail={
+                "code": "SCHEMA_CONVERT_ERROR",
+                "message": f"Schema 转换失败: {e}",
             },
         )
