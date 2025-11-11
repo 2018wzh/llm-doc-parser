@@ -10,7 +10,7 @@ class SchemaField(BaseModel):
     name: str = Field(..., description="字段详情")
     field: str = Field(..., description="字段名称")
     description: Optional[str] = Field(None, description="字段描述")
-    type: Literal["text", "int", "float", "boolean", "date", "datetime"] = Field(
+    type: Literal["text", "int", "float", "boolean", "date", "datetime", "json"] = Field(
         ..., description="字段类型"
     )
     required: bool = Field(default=True, description="字段是否必填")
