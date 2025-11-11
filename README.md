@@ -6,9 +6,8 @@
 
 ### 字段
 
-- source: 文件来源，"minio"或者"raw"
+- source: 文件来源，"minio"或者"file"
 - file: 原始文本内容或minio文件路径
-- upload_file: 上传的文件
 - schema: 数据库中查到的schema
 - provider: 提供商名称
 - model: LLM模型
